@@ -1842,6 +1842,102 @@ fn remove_comment_header(comment: &str) -> &str {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test::support::dedent;
+
+    #[test]
+    fn code_fence_after_wrapped_prose_starts_new_line() {
+        let mut config = Config::default();
+        config.set().wrap_comments(true);
+        let input = dedent! {"
+            /// 5678901234567890
+            /// alpha beta gamma delta epsilon zeta
+            /// ```text
+            /// text
+            /// ```
+        "};
+        // The trailing space before the fence is an existing quirk and likely a bug
+        // to fix separately. Preserve it here to characterize the current behavior.
+        let expected = dedent! {"
+            /// 5678901234567890
+            /// alpha beta gamma
+            /// delta epsilon
+            /// zeta<space>
+            /// ```text
+            /// text
+            /// ```
+        "};
+        let expected = expected.replace("<space>", " ");
+        let shape = Shape::legacy(20, Indent::empty());
+        let actual = rewrite_doc_comment(&input, shape, &config).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn join_block_comment_prefixes() {
+        let input = dedent! {"
+            first
+
+            last
+        "};
+        let expected = dedent! {"
+            first
+            ///
+            /// last
+        "};
+        assert_eq!(CommentRewrite::join_block(&input, "\n/// "), expected);
+    }
+
+    #[test]
+    fn fenced_comment_blank_lines() {
+        let mut config = Config::default();
+        config.set().format_code_in_doc_comments(true);
+        let cases: &[(&str, &[&str], &[&str])] = &[
+            ("empty", &[], &[]),
+            ("single blank", &[""], &[" "]),
+            ("two blanks", &["", ""], &[" "]),
+            ("leading", &["", " text"], &[" ", " text"]),
+            ("trailing", &[" text", ""], &[" text"]),
+            ("two trailing", &[" text", "", ""], &[" text", ""]),
+            (
+                "leading, interior, trailing",
+                &["", " first", "", " second", ""],
+                &[" ", " first", "", " second"],
+            ),
+        ];
+        for marker in ["///", "//!"] {
+            for closed in [false, true] {
+                let comment = |lines: &[&str]| {
+                    let mut result = format!("{marker} ```text");
+                    for line in lines {
+                        result.push_str(&format!("\n{marker}{line}"));
+                    }
+                    if closed {
+                        result.push_str(&format!("\n{marker} ```"));
+                    }
+                    result
+                };
+                for &(name, input, expected) in cases {
+                    // A closed fence loses its sole blank line completely.
+                    let expected = if closed && name == "single blank" {
+                        &[][..]
+                    } else {
+                        expected
+                    };
+                    let actual = rewrite_doc_comment(
+                        &comment(input),
+                        Shape::legacy(100, Indent::empty()),
+                        &config,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        actual,
+                        comment(expected).trim_end(),
+                        "{name}; {marker}; closed={closed}",
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn char_classes() {

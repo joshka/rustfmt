@@ -24,6 +24,7 @@ use tracing::{debug, warn};
 mod configuration_snippet;
 mod mod_resolver;
 mod parser;
+pub(crate) mod support;
 
 const DIFF_CONTEXT_SIZE: usize = 3;
 
